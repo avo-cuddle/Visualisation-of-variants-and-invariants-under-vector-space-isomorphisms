@@ -39,6 +39,9 @@ import pygame
 # 2D LINEAR ALGEBRA HELPERS (no numpy, self-contained)
 # ============================================================
 
+# Keeping this file numpy-free makes it easier for classmates to run it anywhere.
+# Also: in 2D, everything we need fits in a dozen formulas.
+
 def mat_mul(A, v):
     """Multiply 2x2 matrix A by 2D vector v."""
     return (A[0][0] * v[0] + A[0][1] * v[1],
@@ -46,6 +49,7 @@ def mat_mul(A, v):
 
 def mat_mul2(A, B):
     """Multiply two 2x2 matrices A*B."""
+    # Explicit 2x2 multiplication keeps things fast and readable.
     return [
         [A[0][0]*B[0][0] + A[0][1]*B[1][0], A[0][0]*B[0][1] + A[0][1]*B[1][1]],
         [A[1][0]*B[0][0] + A[1][1]*B[1][0], A[1][0]*B[0][1] + A[1][1]*B[1][1]],
@@ -53,6 +57,7 @@ def mat_mul2(A, B):
 
 def mat_det(A):
     """Determinant of a 2x2 matrix. det(A) != 0 iff A is invertible."""
+    # In 2D det(A) is also the signed area scale factor.
     return A[0][0]*A[1][1] - A[0][1]*A[1][0]
 
 def mat_transpose(A):
@@ -69,10 +74,12 @@ def mat_sub(A, B):
 
 def frob_norm(A):
     """Frobenius norm sqrt(sum of squares of entries)."""
+    # Nice single number to quantify “how close to orthogonal” we are.
     return math.sqrt(A[0][0]**2 + A[0][1]**2 + A[1][0]**2 + A[1][1]**2)
 
 def inv2(A):
     """Inverse of a 2x2 matrix. Returns None if singular (numerically)."""
+    # We deliberately treat “almost singular” as singular to avoid ugly blow-ups.
     d = mat_det(A)
     if abs(d) < 1e-12:
         return None
@@ -89,6 +96,7 @@ def norm(u):
 
 def angle_deg(u, v):
     """Angle between u and v in degrees."""
+    # Clamp the cosine for numerical safety (acos gets cranky outside [-1,1]).
     nu, nv = norm(u), norm(v)
     if nu < 1e-12 or nv < 1e-12:
         return float("nan")
@@ -99,6 +107,9 @@ def angle_deg(u, v):
 # ============================================================
 # MATRIX FACTORIES: rotation / shear / scale
 # ============================================================
+
+# The map A is built as a product R * Shear * Scale.
+# This gives “nice looking” animations without det(A) accidentally crossing zero.
 
 def rot(theta):
     """Rotation matrix."""
@@ -125,6 +136,7 @@ def scale(sx, sy):
 
 class MapParams:
     """Parameters for A = R(theta) * Shear(kx,ky) * Scale(sx,sy)."""
+    # Small “struct” object: easier than juggling 5 separate variables everywhere.
     def __init__(self, theta=0.0, kx=0.0, ky=0.0, sx=1.0, sy=1.0):
         self.theta = theta
         self.kx = kx
@@ -134,6 +146,7 @@ class MapParams:
 
 def build_matrix(p: MapParams):
     """Build A from parameters."""
+    # Multiplication order matters. Rightmost factor acts first.
     return mat_mul2(rot(p.theta), mat_mul2(shear(p.kx, p.ky), scale(p.sx, p.sy)))
 
 def interp_params(identity: MapParams, target: MapParams, alpha: float):
@@ -141,6 +154,8 @@ def interp_params(identity: MapParams, target: MapParams, alpha: float):
     Interpolate between identity and target parameters.
     Scales use geometric interpolation so they stay positive.
     """
+    # Linear interpolation is fine for angles/shears.
+    # For scales, geometric interpolation avoids crossing through 0.
     def ginterp(a, b, t):
         return math.exp((1-t)*math.log(a) + t*math.log(b))
 
@@ -157,25 +172,30 @@ def random_invertible_params():
     Random general invertible params.
     Ensure shear stays safely invertible: det(shear)=1-kx*ky away from 0.
     """
+    # Wide-ish ranges, but not so wild that the picture flies off screen.
     theta = random.uniform(-math.pi, math.pi)
     kx = random.uniform(-1.0, 1.0)
     ky = random.uniform(-1.0, 1.0)
 
+    # Keep 1 - kx*ky away from 0 (shear piece would be near-singular otherwise).
     if abs(kx*ky) > 0.65:
         kx *= 0.6
         ky *= 0.6
 
+    # Positive scales, avoid extreme squashing/stretching.
     sx = random.uniform(0.6, 2.0)
     sy = random.uniform(0.6, 2.0)
     return MapParams(theta, kx, ky, sx, sy)
 
 def random_orthogonal_params():
     """Orthogonal params = rotations only (preserve Euclidean dot products)."""
+    # Rotation matrices have det=1 and preserve lengths/angles/dot products.
     theta = random.uniform(-math.pi, math.pi)
     return MapParams(theta, 0.0, 0.0, 1.0, 1.0)
 
 def is_orthogonal(A):
     """Check A^T A ~ I in Frobenius norm."""
+    # This is a quick numerical test; “close enough” is fine for visualization.
     AT = mat_transpose(A)
     ATA = mat_mul2(AT, A)
     I = [[1.0, 0.0],[0.0, 1.0]]
@@ -185,6 +205,10 @@ def is_orthogonal(A):
 # ============================================================
 # UNICODE-SAFE TEXT RENDERING (fixes tofu/squares in sidebar)
 # ============================================================
+
+# Pygame + fonts can be surprisingly fragile with math symbols on some systems.
+# If a font doesn't cover a character, you get little squares ("tofu").
+# The fallback is: replace fancy Unicode with plain ASCII that always renders.
 
 def _pick_font_path(preferred_names, bold=False):
     """
@@ -214,6 +238,7 @@ def load_ui_font(size, bold=False):
     ]
     path = _pick_font_path(preferred, bold=bold)
 
+    # Cheap heuristic: font name/path often hints whether it's a unicode-friendly family.
     unicode_ok = False
     if path:
         low = path.lower()
@@ -223,6 +248,7 @@ def load_ui_font(size, bold=False):
         try:
             return pygame.font.Font(path, size), unicode_ok
         except Exception:
+            # If it fails, we just fall back to the default system font.
             pass
 
     return pygame.font.SysFont(None, size, bold=bold), False
@@ -255,6 +281,7 @@ UNICODE_REPLACEMENTS = {
 
 def sanitize_unicode(text: str) -> str:
     """Replace common math Unicode with ASCII so it never renders as tofu."""
+    # Order doesn't matter here: replacements are all disjoint.
     for k, v in UNICODE_REPLACEMENTS.items():
         text = text.replace(k, v)
     return text
@@ -270,6 +297,11 @@ def blit_text_safe(surf, font, text, pos, color=(235,235,235), unicode_ok=True):
 # ============================================================
 # DRAWING HELPERS
 # ============================================================
+
+# Coordinate system:
+# - “world” is the math plane with y pointing up.
+# - Pygame screen has y pointing down.
+# So the conversion flips the sign in y.
 
 def world_to_screen(panel_rect, world_pt, world_scale):
     """Convert (x,y) world coords to screen pixel coords inside a panel."""
@@ -289,6 +321,8 @@ def draw_arrow(surf, panel_rect, world_scale, a, b, color, width=3):
     L = math.hypot(dx, dy)
     if L < 1e-6:
         return
+
+    # Unit direction along the arrow + perpendicular for the head triangle.
     ux, uy = dx / L, dy / L
     px, py = -uy, ux
 
@@ -304,24 +338,29 @@ def draw_axes_and_grid(surf, panel_rect, world_scale, A=None, grid_n=5,
     """
     Draw axes & grid. If A is provided, draw the image of the grid under A.
     """
+    # The domain panel draws the regular grid.
+    # The image panel draws the pushed-forward grid (so you “see” distortion).
     m = grid_n
 
     def transform(pt):
         return mat_mul(A, pt) if A is not None else pt
 
     for k in range(-m, m+1):
+        # Vertical grid line x = k
         p1 = transform((k, -m))
         p2 = transform((k,  m))
         pygame.draw.line(surf, color_grid,
                          world_to_screen(panel_rect, p1, world_scale),
                          world_to_screen(panel_rect, p2, world_scale), 1)
 
+        # Horizontal grid line y = k
         q1 = transform((-m, k))
         q2 = transform(( m, k))
         pygame.draw.line(surf, color_grid,
                          world_to_screen(panel_rect, q1, world_scale),
                          world_to_screen(panel_rect, q2, world_scale), 1)
 
+    # Axes last so they sit on top.
     x1 = transform((-m, 0))
     x2 = transform(( m, 0))
     y1 = transform((0, -m))
@@ -346,6 +385,8 @@ def draw_line_through_origin(surf, panel_rect, world_scale, direction, color, sp
     nd = norm(d)
     if nd < 1e-8:
         return
+
+    # Normalize so “span” behaves consistently for different directions.
     d = (d[0]/nd, d[1]/nd)
     p1 = (-span*d[0], -span*d[1])
     p2 = ( span*d[0],  span*d[1])
@@ -368,6 +409,7 @@ def fnum(x, places=4):
 # FOCUS MODES
 # ============================================================
 
+# These keys match the digit controls (0..9). Keep them stable for screenshots.
 FOCUS_TITLES = {
     1: "Additivity (linearity)",
     2: "Homogeneity (linearity)",
@@ -386,14 +428,17 @@ FOCUS_TITLES = {
 # ============================================================
 
 def compute_layout(W, H):
+    # Aim: 2 panels + sidebar without feeling cramped.
     margin = 16
 
+    # Sidebar clamps: it's text-heavy, so give it room on wide screens.
     sidebar_w = max(520, min(680, int(0.34 * W)))
 
     usable_w = W - sidebar_w - 4*margin
     panel_w = max(260, usable_w // 2)
     panel_h = max(260, H - 2*margin)
 
+    # Slightly different split for smaller windows.
     if W < 1200:
         sidebar_w = max(460, min(640, int(0.36 * W)))
         usable_w = W - sidebar_w - 4*margin
@@ -414,10 +459,12 @@ def main():
 
     pygame.display.set_caption("Isomorphisms: linear structure vs Euclidean geometry (focus modes 0–9)")
 
+    # Default window size: wide enough for the sidebar to breathe.
     W, H = 1780, 740
     windowed_size = (W, H)
     fullscreen = False
 
+    # Start in a resizable window (fullscreen is optional).
     screen = pygame.display.set_mode((W, H), pygame.RESIZABLE)
     clock = pygame.time.Clock()
 
@@ -427,8 +474,10 @@ def main():
     big, ok3 = load_ui_font(22, bold=True)
     UNICODE_OK = (ok1 and ok2 and ok3)
 
+    # Pixels per 1 world unit (tweak if you want a zoomed-in/out feel).
     world_scale = 58
 
+    # Identity is our “home base” map; we morph between identity and target.
     identity = MapParams(0.0, 0.0, 0.0, 1.0, 1.0)
     target = random_invertible_params()
 
@@ -437,6 +486,7 @@ def main():
     show_circle = True
     focus_mode = None  # None => overview
 
+    # Separate clocks: the map morph and the vector motion are independent.
     t_map = 0.0
     t_vec = 0.0
     speed_map = 0.6
@@ -444,20 +494,26 @@ def main():
 
     running = True
     while running:
+        # dt in seconds (60 FPS target).
         dt = clock.tick(60) / 1000.0
 
+        # Vectors always animate; the map can be paused.
         t_vec += dt * speed_vec
         if not pause_map:
             t_map += dt * speed_map
 
+        # Smooth back-and-forth interpolation alpha in [0,1].
         alpha = 0.5 * (1.0 + math.sin(t_map))
 
+        # Current transformation matrix A(t).
         p = interp_params(identity, target, alpha)
         A = build_matrix(p)
 
+        # Two “live” vectors in the domain (just trigonometric motion).
         u_base = (2.2*math.cos(0.9*t_vec), 1.6*math.sin(1.1*t_vec))
         v_base = (-1.7*math.sin(0.7*t_vec + 0.6), 2.1*math.cos(0.6*t_vec + 0.2))
 
+        # In dependence focus mode, force v to be a scalar multiple of u.
         if focus_mode == 4:
             s = 0.5 + 0.4*math.sin(1.2*t_vec)
             u = u_base
@@ -465,22 +521,28 @@ def main():
         else:
             u, v = u_base, v_base
 
+        # Push vectors through the map.
         Tu = mat_mul(A, u)
         Tv = mat_mul(A, v)
 
+        # Lambda for the homogeneity check (changes over time).
         lam = 2.0 * math.sin(0.8*t_vec)
 
+        # Two moving points for the distance focus.
         pnt = (2.0*math.cos(0.55*t_vec + 0.2), 1.6*math.sin(0.7*t_vec))
         qnt = (1.8*math.cos(0.62*t_vec + 2.1), 1.4*math.sin(0.8*t_vec + 1.0))
         Tp = mat_mul(A, pnt)
         Tq = mat_mul(A, qnt)
 
+        # Diagnostics: invertibility and “how orthogonal” the matrix is.
         detA = mat_det(A)
         orth_err, is_orth = is_orthogonal(A)
 
+        # Gram matrix G = A^T A drives dot products / norms / angles under the map.
         AT = mat_transpose(A)
         G = mat_mul2(AT, A)
 
+        # Precompute a bunch of scalar values for the sidebar.
         nu, nv = norm(u), norm(v)
         nTu, nTv = norm(Tu), norm(Tv)
         duv = dot(u, v)
@@ -488,14 +550,17 @@ def main():
         ang_uv = angle_deg(u, v)
         ang_T = angle_deg(Tu, Tv)
 
+        # Additivity check: T(u+v) should match T(u)+T(v).
         Tsum = mat_mul(A, (u[0]+v[0], u[1]+v[1]))
         sum_images = (Tu[0]+Tv[0], Tu[1]+Tv[1])
         add_err = math.hypot(Tsum[0]-sum_images[0], Tsum[1]-sum_images[1])
 
+        # Homogeneity check: T(lambda*u) should match lambda*T(u).
         Tlu = mat_mul(A, (lam*u[0], lam*u[1]))
         lTu = (lam*Tu[0], lam*Tu[1])
         hom_err = math.hypot(Tlu[0]-lTu[0], Tlu[1]-lTu[1])
 
+        # Distances (Euclidean) are not generally preserved.
         d_pq = norm((pnt[0]-qnt[0], pnt[1]-qnt[1]))
         d_Tpq = norm((Tp[0]-Tq[0], Tp[1]-Tq[1]))
 
@@ -506,6 +571,7 @@ def main():
             if e.type == pygame.QUIT:
                 running = False
 
+            # Window resize only matters in windowed mode.
             elif e.type == pygame.VIDEORESIZE and not fullscreen:
                 W, H = max(900, e.w), max(520, e.h)
                 windowed_size = (W, H)
@@ -518,16 +584,19 @@ def main():
                 elif e.key == pygame.K_SPACE:
                     pause_map = not pause_map
 
+                # New random target (orthogonal or general depending on mode).
                 elif e.key == pygame.K_r:
                     target = random_orthogonal_params() if orthogonal_mode else random_invertible_params()
 
                 elif e.key == pygame.K_c:
                     show_circle = not show_circle
 
+                # Toggle orthogonal-only mode (useful for “geometry preserved” demo).
                 elif e.key == pygame.K_o:
                     orthogonal_mode = not orthogonal_mode
                     target = random_orthogonal_params() if orthogonal_mode else random_invertible_params()
 
+                # Fullscreen toggle (nice for lectures / demos).
                 elif e.key == pygame.K_F11:
                     fullscreen = not fullscreen
                     if fullscreen:
@@ -537,6 +606,7 @@ def main():
                         W, H = windowed_size
                         screen = pygame.display.set_mode((W, H), pygame.RESIZABLE)
 
+                # Digit keys pick focus modes; press again to return to overview.
                 elif pygame.K_0 <= e.key <= pygame.K_9:
                     digit = e.key - pygame.K_0
                     focus_mode = None if focus_mode == digit else digit
@@ -550,14 +620,18 @@ def main():
         # DRAW
         # -------------------------
         screen.fill((14, 14, 17))
+
+        # Rounded rectangles for the three panels.
         for rect in (left, mid, side):
             pygame.draw.rect(screen, (24, 24, 30), rect, border_radius=14)
             pygame.draw.rect(screen, (70, 70, 80), rect, 2, border_radius=14)
 
+        # Headers.
         blit_text_safe(screen, big, "Domain (coordinates)  R^2", (left.x+14, left.y+10), unicode_ok=UNICODE_OK)
         blit_text_safe(screen, big, "Image under T(x)=Ax", (mid.x+14, mid.y+10), unicode_ok=UNICODE_OK)
         blit_text_safe(screen, big, "Isomorphism dashboard", (side.x+14, side.y+10), unicode_ok=UNICODE_OK)
 
+        # Help text along the top.
         blit_text_safe(
             screen, small,
             "Controls: SPACE pause | R new map | O orthogonal | C circle | digits 0–9 focus | F11 fullscreen | ESC quit",
@@ -566,9 +640,11 @@ def main():
             unicode_ok=UNICODE_OK
         )
 
+        # Background grids in both panels.
         draw_axes_and_grid(screen, left, world_scale, A=None, grid_n=5)
         draw_axes_and_grid(screen, mid,  world_scale, A=A,  grid_n=5)
 
+        # Standard basis vectors and their images (columns of A).
         e1 = (1.0, 0.0)
         e2 = (0.0, 1.0)
         Ae1 = mat_mul(A, e1)
@@ -580,6 +656,7 @@ def main():
         draw_arrow(screen, mid,  world_scale, (0,0), Ae1, basis_col, 3)
         draw_arrow(screen, mid,  world_scale, (0,0), Ae2, basis_col, 3)
 
+        # Unit circle in the domain becomes an ellipse under a general invertible map.
         draw_circle_now = show_circle or (focus_mode in (0, 6))
         if draw_circle_now:
             pts = []
@@ -592,16 +669,19 @@ def main():
             draw_curve(screen, left, world_scale, pts, (120,120,140), 2)
             draw_curve(screen, mid,  world_scale, pts_img, (120,120,140), 2)
 
+        # Colors for the two main vectors.
         col_u = (120, 200, 255)
         col_v = (255, 150, 205)
         col_sum = (160, 255, 160)
 
+        # Most modes show u/v arrows; distance mode uses points instead.
         if focus_mode != 9:
             draw_arrow(screen, left, world_scale, (0,0), u, col_u, 4)
             draw_arrow(screen, left, world_scale, (0,0), v, col_v, 4)
             draw_arrow(screen, mid,  world_scale, (0,0), Tu, col_u, 4)
             draw_arrow(screen, mid,  world_scale, (0,0), Tv, col_v, 4)
 
+        # Additivity demo: parallelogram-ish construction in both panels.
         if focus_mode == 1:
             draw_arrow(screen, left, world_scale, (0,0), (u[0]+v[0], u[1]+v[1]), col_sum, 4)
             draw_arrow(screen, left, world_scale, u, (u[0]+v[0], u[1]+v[1]), col_v, 2)
@@ -611,14 +691,17 @@ def main():
             draw_arrow(screen, mid, world_scale, Tu, sum_images, col_v, 2)
             draw_arrow(screen, mid, world_scale, Tv, sum_images, col_u, 2)
 
+        # Homogeneity demo: show lambda*u and T(lambda*u).
         elif focus_mode == 2:
             draw_arrow(screen, left, world_scale, (0,0), (lam*u[0], lam*u[1]), (255,210,120), 4)
             draw_arrow(screen, mid,  world_scale, (0,0), Tlu, (255,210,120), 4)
 
+        # Span demo: line through u maps to line through Tu.
         elif focus_mode == 5:
             draw_line_through_origin(screen, left, world_scale, u, (150,150,170), span=6.0, width=2)
             draw_line_through_origin(screen, mid,  world_scale, Tu, (150,150,170), span=6.0, width=2)
 
+        # Distance demo: show two points and the segment between them.
         elif focus_mode == 9:
             ppx = world_to_screen(left, pnt, world_scale)
             pqx = world_to_screen(left, qnt, world_scale)
@@ -637,11 +720,14 @@ def main():
         # -------------------------
         a, b = A[0]
         c, d = A[1]
+
+        # Display A and the explicit coordinate formula for T.
         eq1 = f"A = [[{a:+.3f}, {b:+.3f}], [{c:+.3f}, {d:+.3f}]]"
         eq2 = f"T(x,y) = ({a:+.3f}x + {b:+.3f}y , {c:+.3f}x + {d:+.3f}y)"
         blit_text_safe(screen, small, eq1, (side.x+14, side.y+44), (230,230,230), unicode_ok=UNICODE_OK)
         blit_text_safe(screen, small, eq2, (side.x+14, side.y+64), (230,230,230), unicode_ok=UNICODE_OK)
 
+        # Status lines: whether map is paused and whether we’re in orthogonal mode.
         status = "PAUSED" if pause_map else "RUNNING"
         mode_txt = "ORTHOGONAL (preserves dot/norm/angle/dist)" if orthogonal_mode else "GENERAL INVERTIBLE (geometry can change)"
         blit_text_safe(screen, small, f"Map morph: {status}", (side.x+14, side.y+88),
@@ -659,6 +745,9 @@ def main():
         y += 26
 
         focus_lines = []
+
+        # The focus blocks below are intentionally “mathy” but still concrete.
+        # They show an identity + a numerical check so students trust what they see.
 
         if focus_mode == 1:
             focus_lines += [
@@ -772,10 +861,12 @@ def main():
             blit_text_safe(screen, small, line, (side.x+14, y), (235,235,235), unicode_ok=UNICODE_OK)
             y += 18
 
+        # Divider line.
         y += 8
         pygame.draw.line(screen, (80,80,90), (side.x+14, y), (side.right-14, y), 1)
         y += 10
 
+        # Invariants list (always shown).
         blit_text_safe(screen, font, "Linear-structure preserved by an isomorphism:", (side.x+14, y),
                        (160,255,160), unicode_ok=UNICODE_OK)
         y += 24
@@ -792,6 +883,8 @@ def main():
             y += 18
 
         y += 8
+
+        # Non-invariants list (always shown).
         blit_text_safe(screen, font, "Euclidean geometry NOT preserved in general:", (side.x+14, y),
                        (255,180,180), unicode_ok=UNICODE_OK)
         y += 24
@@ -807,6 +900,7 @@ def main():
             blit_text_safe(screen, small, s, (side.x+24, y), col, unicode_ok=UNICODE_OK)
             y += 18
 
+        # Bottom readout: det + orthogonality error.
         y += 10
         blit_text_safe(
             screen, small,
@@ -821,4 +915,5 @@ def main():
     pygame.quit()
 
 if __name__ == "__main__":
+    # Standard entry point so you can run this file directly.
     main()
